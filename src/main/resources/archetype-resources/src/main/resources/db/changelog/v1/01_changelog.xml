@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.6.xsd">
+
+  <changeSet author="anks14" id="v1_01_01">
+      <addColumn schemaName="${schemaName}" tableName="customer">
+          <column name ="email" type="VARCHAR(64)"/>
+      </addColumn>
+
+  </changeSet>
+
+    <changeSet author="anks14" id="v1_01_02">
+        <addColumn schemaName="${schemaName}" tableName="customer">
+            <column name ="phone" type="VARCHAR(64)"/>
+        </addColumn>
+
+    </changeSet>
+
+</databaseChangeLog>

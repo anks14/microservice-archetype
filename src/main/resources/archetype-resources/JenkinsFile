@@ -1,0 +1,137 @@
+#set( $symbol_pound = '#' )
+#set( $symbol_dollar = '$' )
+#set( $symbol_escape = '\' )
+#!groovy
+node() {
+
+    properties(
+
+        [
+            parameters (
+                [
+                    string(defaultValue: 'master',description: '',name: 'BRANCH_NAME', trim: true ),
+                    booleanParam(defaultValue: false,description: '',name: 'FULL_BUILD'),
+                    booleanParam(defaultValue: true,description: '',name: 'DEPLOY_DEV_DB'),
+                    booleanParam(defaultValue: false,description: '',name: 'DEPLOY_DEV'),
+                    booleanParam(defaultValue: false,description: '',name: 'RESTART_DEV'),
+
+                ]
+            )
+        ]
+    )
+
+    printOptions()
+    checkout()
+    compile()
+
+    if (params.FULL_BUILD) {
+        test()
+        if ('master' == "${BRANCH_NAME}") {
+            sonarScan()
+        }
+        buildDocker()
+    }
+
+    if (params.DEPLOY_DEV_DB) {
+        runDevDb()
+    }
+
+    if (params.DEPLOY_DEV) {
+        deployDev()
+    }
+
+    if (params.RESTART_DEV) {
+        restartDev()
+    }
+
+}
+
+def printOptions() {
+    echo "********* Checkout branch : ${BRANCH_NAME}"
+    echo "********* Full build: ${FULL_BUILD}"
+    echo "********* Deploy Dev DB: ${DEPLOY_DEV_DB}"
+    echo "********* Deploy Dev: ${DEPLOY_DEV}"
+    echo "********* Restart Dev : ${RESTART_DEV}"
+
+}
+
+def checkout() {
+    stage('Checkout Project') {
+        git branch: "${BRANCH_NAME}", credentialsId: '',url: "https://github.com/anks14/${gitRepoName}.git"
+        //load "${WORKSPACE}/jenkins.properties"
+        //sh "chmod 775 ${WORKSPACE}/scripts/*.sh"
+    }
+}
+
+def compile () {
+    stage('Compilation') {
+        try {
+            sh 'mvn -U clean install -DskipTests'
+        } catch (err) {
+            throw err
+        }
+    }
+}
+
+def test() {
+
+    parallel 'Unit Tests' : {
+        stage("Running Unit & Integration Tests") {
+            try {
+                sh 'mvn verify'
+            } catch (err) {
+                step([$class: 'JUnitResultArchiver', testResults: '**/target/surefire-reports/TEST-*.xml'])
+                throw err
+            }
+
+        }
+
+    }
+
+}
+
+def sonarScan() {
+    stage('Sonar Scan') {
+        try {
+
+            withCredentials([string(credentialsId: 'SONAR_SECRET', variable: 'SONAR_TOKEN_VAL')]) {
+                sh 'mvn -Dsonar.qualitygate.wait=true -Dsonar.token=$SONAR_TOKEN_VAL sonar:sonar -Psonar'
+            }
+        } catch (err) {
+            throw err
+        }
+
+    }
+}
+
+def buildDocker() {
+    stage('Docker Image') {
+        sh 'mvn docker:build'
+
+    }
+}
+
+def runDevDb() {
+    stage('Dev DB Run')  {
+        withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'LIQUIBASE_CREDS',usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD']]) {
+            try {
+                sh 'mvn resources:resources liquibase:update -Ddatabase.password=$PASSWORD -Pdev'
+            } catch(err) {
+                throw err
+            }
+        }
+
+    }
+}
+
+def deployDev() {
+    stage('DEV ECR Tag') {
+        sh "${WORKSPACE}/scripts/deploy-docker.sh ${ARTIFACT_ID} '' dev $ECR_URL"
+    }
+}
+
+def restartDev() {
+    stage('Dev Service Restart') {
+        sh "${WORKSPACE}/scripts/restart-service.sh dev-cluster dev-service"
+    }
+}
